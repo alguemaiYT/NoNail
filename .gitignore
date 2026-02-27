@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 dist/
 build/
+
+# Sensitive files — never commit real credentials
+.env
+.env.*
+config.yaml
+mcp-clients.json

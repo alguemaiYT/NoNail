@@ -98,6 +98,8 @@ def save_servers(servers: dict[str, ExternalMCPServer]) -> None:
     data = {"mcpServers": {name: s.to_dict() for name, s in servers.items()}}
     with open(MCP_CLIENTS_PATH, "w") as f:
         json.dump(data, f, indent=2)
+    # Restrict permissions — file may contain tokens/secrets
+    MCP_CLIENTS_PATH.chmod(0o600)
 
 
 # ---------------------------------------------------------------------------

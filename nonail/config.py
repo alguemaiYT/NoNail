@@ -123,3 +123,5 @@ class Config:
         }
         with open(path, "w") as f:
             yaml.safe_dump(dump, f, default_flow_style=False)
+        # Restrict permissions — file may reference sensitive env vars
+        path.chmod(0o600)
