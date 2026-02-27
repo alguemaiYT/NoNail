@@ -168,6 +168,16 @@ model: claude-sonnet-4-20250514
 api_key_env: ANTHROPIC_API_KEY
 ```
 
+### Using with Groq (fast, free tier available)
+
+```yaml
+provider: groq
+model: mixtral-8x7b-32768
+api_key_env: GROQ_API_KEY
+```
+
+List available Groq models: https://console.groq.com/docs/models
+
 ### Using with local LLMs (Ollama, LM Studio, etc.)
 
 ```yaml

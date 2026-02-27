@@ -5,10 +5,12 @@ from __future__ import annotations
 from .base import Message, Provider
 from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
+from .groq_provider import GroqProvider
 
 PROVIDERS: dict[str, type[Provider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
+    "groq": GroqProvider,
 }
 
 
@@ -28,6 +30,7 @@ __all__ = [
     "Message",
     "OpenAIProvider",
     "AnthropicProvider",
+    "GroqProvider",
     "PROVIDERS",
     "create_provider",
 ]

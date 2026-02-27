@@ -12,6 +12,7 @@ model: gpt-4o
 # api_base: https://openrouter.ai/api/v1
 
 # API key — prefer using the NONAIL_API_KEY environment variable instead.
+# For Groq, use GROQ_API_KEY environment variable.
 # api_key: sk-...
 
 # Environment variable that holds the API key (default: NONAIL_API_KEY)
