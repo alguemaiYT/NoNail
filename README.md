@@ -1,1 +1,255 @@
-inicio do projeto.
+<p align="center"><strong>🔨 NoNail</strong></p>
+<p align="center">
+  <em>Simplified, MCP-compatible AI agent with full computer access.</em><br>
+  Inspired by <a href="https://github.com/zeroclaw-labs/zeroclaw">ZeroClaw</a> · Built with Python · Works with any LLM provider.
+</p>
+
+---
+
+## What is NoNail?
+
+NoNail is a **lightweight AI agent** that gives any LLM **full access to your computer** — shell commands, file system, process management, and system information — through a clean tool interface.
+
+It runs in two modes:
+
+| Mode | Description |
+|------|-------------|
+| **Interactive CLI** | Chat directly with the agent in your terminal |
+| **MCP Server** | Expose tools via [Model Context Protocol](https://modelcontextprotocol.io) so any MCP client (Claude Desktop, Cursor, VS Code, etc.) can use them |
+
+### Key features
+
+- 🔌 **MCP-compatible** — plug into any MCP client as a standard tool server
+- 🔄 **Provider-agnostic** — swap between OpenAI, Anthropic, OpenRouter, or local LLMs via config
+- 🖥️ **Full computer access** — bash, files, processes, system info — all exposed to the LLM
+- 🧩 **Extensible** — add new tools by implementing a simple `Tool` base class
+- ⚡ **Minimal** — no bloat, no frameworks, just Python + the MCP SDK
+
+---
+
+## Quick Start
+
+### 1. Install
+
+```bash
+cd NoNail
+pip install -e .
+```
+
+### 2. Configure
+
+```bash
+# Option A: environment variable (fastest)
+export NONAIL_API_KEY="sk-your-key-here"
+
+# Option B: generate config file
+nonail init --provider openai --model gpt-4o
+# → creates ~/.nonail/config.yaml
+```
+
+### 3. Use
+
+#### Interactive chat
+
+```bash
+nonail chat
+```
+
+```
+🔨 NoNail
+Provider: openai | Model: gpt-4o
+Type /quit to exit.
+
+you> list all Python files in the current directory
+  ⚙ bash(command='find . -name "*.py"')
+
+./nonail/__init__.py
+./nonail/agent.py
+...
+```
+
+#### Single command
+
+```bash
+nonail run "what OS am I running?"
+```
+
+#### MCP server (for Claude Desktop, Cursor, etc.)
+
+```bash
+nonail serve
+```
+
+---
+
+## Connecting as MCP Server
+
+Add NoNail to your MCP client configuration:
+
+### Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "nonail": {
+      "command": "nonail",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+### Cursor / VS Code
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "nonail": {
+        "command": "nonail",
+        "args": ["serve"]
+      }
+    }
+  }
+}
+```
+
+After connecting, the MCP client will discover all NoNail tools automatically.
+
+---
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `bash` | Execute any shell command |
+| `read_file` | Read file contents |
+| `write_file` | Create or overwrite a file |
+| `list_directory` | List directory contents |
+| `search_files` | Recursive glob search |
+| `process_list` | List running processes |
+| `process_kill` | Send signals to processes |
+| `system_info` | OS, arch, env, network info |
+
+Run `nonail tools` to see all available tools.
+
+---
+
+## Configuration
+
+NoNail reads from `~/.nonail/config.yaml` (create with `nonail init`):
+
+```yaml
+provider: openai          # openai | anthropic
+model: gpt-4o             # any model supported by the provider
+# api_base: https://openrouter.ai/api/v1  # for OpenRouter / local LLMs
+api_key_env: NONAIL_API_KEY
+max_iterations: 25
+
+mcp_server:
+  enabled: true
+  transport: stdio
+```
+
+### Using with OpenRouter
+
+```yaml
+provider: openai
+model: anthropic/claude-sonnet-4-20250514
+api_base: https://openrouter.ai/api/v1
+api_key_env: OPENROUTER_API_KEY
+```
+
+### Using with Anthropic
+
+```yaml
+provider: anthropic
+model: claude-sonnet-4-20250514
+api_key_env: ANTHROPIC_API_KEY
+```
+
+### Using with local LLMs (Ollama, LM Studio, etc.)
+
+```yaml
+provider: openai
+model: llama3
+api_base: http://localhost:11434/v1
+api_key_env: NONAIL_API_KEY  # set to any non-empty string
+```
+
+---
+
+## CLI Reference
+
+```
+nonail chat       Interactive chat session
+nonail run MSG    Run a single prompt
+nonail serve      Start MCP server (stdio)
+nonail tools      List available tools
+nonail init       Generate default config
+nonail doctor     Check configuration health
+```
+
+---
+
+## Adding Custom Tools
+
+Create a new file in `nonail/tools/` implementing the `Tool` base class:
+
+```python
+from nonail.tools.base import Tool, ToolResult
+
+class MyTool(Tool):
+    name = "my_tool"
+    description = "Does something useful."
+
+    def parameters_schema(self):
+        return {
+            "type": "object",
+            "properties": {
+                "input": {"type": "string", "description": "..."},
+            },
+            "required": ["input"],
+        }
+
+    async def run(self, *, input: str, **_):
+        return ToolResult.ok(f"Result: {input}")
+```
+
+Then register it in `nonail/tools/__init__.py` by adding it to `ALL_TOOLS`.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    NoNail Agent                     │
+│                                                     │
+│  ┌──────────┐   ┌───────────┐   ┌───────────────┐  │
+│  │ Provider  │   │   Agent   │   │  MCP Server   │  │
+│  │ (OpenAI,  │◄─►│   Loop    │◄─►│  (FastMCP)    │  │
+│  │ Anthropic,│   │           │   │               │  │
+│  │ Local)    │   └─────┬─────┘   └───────────────┘  │
+│  └──────────┘         │                             │
+│                 ┌─────▼─────┐                       │
+│                 │   Tools   │                       │
+│                 ├───────────┤                       │
+│                 │ bash      │                       │
+│                 │ read_file │                       │
+│                 │ write_file│                       │
+│                 │ list_dir  │                       │
+│                 │ search    │                       │
+│                 │ processes │                       │
+│                 │ sysinfo   │                       │
+│                 └───────────┘                       │
+└─────────────────────────────────────────────────────┘
+```
+
+Inspired by [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)'s trait-based, swappable architecture — simplified for Python and MCP.
+
+---
+
+## License
+
+MIT

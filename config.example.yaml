@@ -1,0 +1,32 @@
+# NoNail configuration
+# Copy to ~/.nonail/config.yaml and edit as needed.
+
+# LLM Provider — "openai" or "anthropic"
+# The OpenAI provider also works with OpenRouter and any OpenAI-compatible API.
+provider: openai
+
+# Model to use
+model: gpt-4o
+
+# (Optional) Custom API base URL — useful for OpenRouter, local LLMs, etc.
+# api_base: https://openrouter.ai/api/v1
+
+# API key — prefer using the NONAIL_API_KEY environment variable instead.
+# api_key: sk-...
+
+# Environment variable that holds the API key (default: NONAIL_API_KEY)
+api_key_env: NONAIL_API_KEY
+
+# System prompt — defines the agent personality
+system_prompt: >
+  You are NoNail, a powerful AI agent with full access to this computer.
+  You can run shell commands, read/write files, manage processes, and
+  query system information. Be helpful, precise, and safe.
+
+# Maximum tool-call iterations per user message
+max_iterations: 25
+
+# MCP server settings
+mcp_server:
+  enabled: true
+  transport: stdio
