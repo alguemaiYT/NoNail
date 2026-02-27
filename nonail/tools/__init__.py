@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+from .advanced import (
+    CopyPathTool,
+    CronManageTool,
+    DeletePathTool,
+    DownloadFileTool,
+    HttpRequestTool,
+    MakeDirectoryTool,
+    MovePathTool,
+    RunPythonTool,
+    SearchTextTool,
+    StartBackgroundCommandTool,
+)
 from .base import Tool, ToolResult
 from .bash import BashTool
 from .filesystem import ListDirTool, ReadFileTool, SearchFilesTool, WriteFileTool
@@ -14,6 +26,16 @@ ALL_TOOLS: list[Tool] = [
     WriteFileTool(),
     ListDirTool(),
     SearchFilesTool(),
+    SearchTextTool(),
+    MakeDirectoryTool(),
+    CopyPathTool(),
+    MovePathTool(),
+    DeletePathTool(),
+    RunPythonTool(),
+    StartBackgroundCommandTool(),
+    HttpRequestTool(),
+    DownloadFileTool(),
+    CronManageTool(),
     ProcessListTool(),
     ProcessKillTool(),
     SystemInfoTool(),
@@ -31,6 +53,16 @@ __all__ = [
     "WriteFileTool",
     "ListDirTool",
     "SearchFilesTool",
+    "SearchTextTool",
+    "MakeDirectoryTool",
+    "CopyPathTool",
+    "MovePathTool",
+    "DeletePathTool",
+    "RunPythonTool",
+    "StartBackgroundCommandTool",
+    "HttpRequestTool",
+    "DownloadFileTool",
+    "CronManageTool",
     "ProcessListTool",
     "ProcessKillTool",
     "SystemInfoTool",

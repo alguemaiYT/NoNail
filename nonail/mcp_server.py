@@ -6,17 +6,15 @@ can connect to NoNail and use its tools through the standard protocol.
 
 from __future__ import annotations
 
-import asyncio
-import json
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from .tools import ALL_TOOLS, TOOLS_BY_NAME
+from .tools import ALL_TOOLS
 
 mcp = FastMCP(
     "NoNail",
-    description=(
+    instructions=(
         "NoNail agent — full computer access via MCP. "
         "Execute shell commands, read/write files, manage processes, "
         "and query system information."
@@ -42,7 +40,6 @@ def _register_tools() -> None:
             # Build parameter annotations from schema for FastMCP
             schema = t.parameters_schema()
             params = schema.get("properties", {})
-            required = set(schema.get("required", []))
 
             # Annotate with (type, description) tuples for FastMCP
             annotations: dict[str, Any] = {}

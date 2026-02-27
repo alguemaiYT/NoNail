@@ -39,11 +39,11 @@ pip install -e .
 ### 2. Configure
 
 ```bash
-# Option A: environment variable (fastest)
-export NONAIL_API_KEY="sk-your-key-here"
+# Option A: set your provider API key (example: Groq)
+export GROQ_API_KEY="gsk-your-key-here"
 
-# Option B: generate config file
-nonail init --provider openai --model gpt-4o
+# Option B: generate config file for your provider
+nonail init --provider groq --model llama-3.3-70b-versatile
 # → creates ~/.nonail/config.yaml
 ```
 
@@ -118,6 +118,82 @@ After connecting, the MCP client will discover all NoNail tools automatically.
 
 ---
 
+## Integrating community MCP servers
+
+NoNail works **both ways** with MCP:
+
+- **As a server** — expose its 18+ built-in tools to any MCP client (Claude Desktop, VS Code Copilot, Cursor…)
+- **As a client** — connect to external community MCP servers (npm/npx, GitHub, HTTP) and use their tools inside the NoNail agent
+
+### NoNail as MCP client (consuming external servers)
+
+External MCP servers are managed with the `nonail mcp` command group. Their tools are automatically loaded when you start `nonail chat`.
+
+```bash
+# Add an npm/npx-based server (Node.js required)
+nonail mcp add playwright --command npx --args "@playwright/mcp@latest"
+nonail mcp add github --command npx \
+    --args "-y @modelcontextprotocol/server-github" \
+    --env '{"GITHUB_PERSONAL_ACCESS_TOKEN":"ghp_..."}'
+
+# Add a remote HTTP/SSE server
+nonail mcp add context7 --type http --url https://mcp.context7.com/mcp
+
+# List, test, enable/disable, remove
+nonail mcp list
+nonail mcp test playwright      # connects and shows available tools
+nonail mcp disable playwright   # keep configured but skip loading
+nonail mcp remove playwright    # delete entry
+```
+
+Config is stored in `~/.nonail/mcp-clients.json` (same format as `~/.copilot/mcp-config.json`):
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "tools": ["*"],
+      "enabled": true
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "tools": ["*"],
+      "enabled": true
+    }
+  }
+}
+```
+
+Once added, launch `nonail chat` — external tools appear alongside built-in ones, prefixed with the server name (e.g. `[playwright] browser_navigate`).
+
+### NoNail as MCP server (being consumed by clients)
+
+Add NoNail to any MCP client by pointing it at `nonail serve`:
+
+**GitHub Copilot CLI** — run `/mcp add`, choose **STDIO**, command `nonail`, args `serve`:
+
+```json
+// ~/.copilot/mcp-config.json
+{
+  "mcpServers": {
+    "nonail": {
+      "type": "stdio",
+      "command": "nonail",
+      "args": ["serve"],
+      "env": { "GROQ_API_KEY": "your-key" },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`) and **Cursor / VS Code** use the same `command`/`args` pattern.
+
+
 ## Available Tools
 
 | Tool | Description |
@@ -127,11 +203,28 @@ After connecting, the MCP client will discover all NoNail tools automatically.
 | `write_file` | Create or overwrite a file |
 | `list_directory` | List directory contents |
 | `search_files` | Recursive glob search |
+| `search_text` | Recursive text/regex search with line numbers |
+| `make_directory` | Create directories (`mkdir -p`) |
+| `copy_path` | Copy files/directories |
+| `move_path` | Move or rename files/directories |
+| `delete_path` | Delete files/directories |
+| `run_python` | Execute Python snippets locally |
+| `start_background_command` | Start detached long-running commands |
+| `http_request` | Call APIs via HTTP methods |
+| `download_file` | Download URL to local path |
+| `cron_manage` | List/add/remove scheduled cron jobs |
 | `process_list` | List running processes |
 | `process_kill` | Send signals to processes |
 | `system_info` | OS, arch, env, network info |
 
 Run `nonail tools` to see all available tools.
+
+### Daily automation ideas
+
+- **Morning ops check:** use `cron_manage` to schedule periodic checks and `http_request` to query service/health endpoints.
+- **Workspace hygiene:** combine `search_text`, `copy_path`, `move_path`, and `delete_path` for file cleanup/refactors.
+- **Background jobs:** start long tasks with `start_background_command` and inspect with `process_list`.
+- **Scripting on demand:** use `run_python` for quick local data transformations and automation helpers.
 
 ---
 
@@ -140,10 +233,10 @@ Run `nonail tools` to see all available tools.
 NoNail reads from `~/.nonail/config.yaml` (create with `nonail init`):
 
 ```yaml
-provider: openai          # openai | anthropic
+provider: openai          # openai | anthropic | groq
 model: gpt-4o             # any model supported by the provider
 # api_base: https://openrouter.ai/api/v1  # for OpenRouter / local LLMs
-api_key_env: NONAIL_API_KEY
+api_key_env: OPENAI_API_KEY
 max_iterations: 25
 
 mcp_server:
@@ -172,7 +265,7 @@ api_key_env: ANTHROPIC_API_KEY
 
 ```yaml
 provider: groq
-model: mixtral-8x7b-32768
+model: llama-3.3-70b-versatile
 api_key_env: GROQ_API_KEY
 ```
 

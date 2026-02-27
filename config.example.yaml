@@ -1,7 +1,7 @@
 # NoNail configuration
 # Copy to ~/.nonail/config.yaml and edit as needed.
 
-# LLM Provider — "openai" or "anthropic"
+# LLM Provider — "openai", "anthropic", or "groq"
 # The OpenAI provider also works with OpenRouter and any OpenAI-compatible API.
 provider: openai
 
@@ -11,18 +11,17 @@ model: gpt-4o
 # (Optional) Custom API base URL — useful for OpenRouter, local LLMs, etc.
 # api_base: https://openrouter.ai/api/v1
 
-# API key — prefer using the NONAIL_API_KEY environment variable instead.
-# For Groq, use GROQ_API_KEY environment variable.
+# API key — prefer using provider-specific environment variables:
+# OPENAI_API_KEY | ANTHROPIC_API_KEY | GROQ_API_KEY
 # api_key: sk-...
 
-# Environment variable that holds the API key (default: NONAIL_API_KEY)
-api_key_env: NONAIL_API_KEY
+# Environment variable that holds the API key (choose based on provider)
+api_key_env: OPENAI_API_KEY
 
-# System prompt — defines the agent personality
-system_prompt: >
-  You are NoNail, a powerful AI agent with full access to this computer.
-  You can run shell commands, read/write files, manage processes, and
-  query system information. Be helpful, precise, and safe.
+# System prompt — defines the agent personality and tool guidance
+# The default prompt below covers all 18 built-in tools with usage guidelines.
+# system_prompt: >
+#   You are NoNail, an autonomous AI agent with complete access to this computer...
 
 # Maximum tool-call iterations per user message
 max_iterations: 25

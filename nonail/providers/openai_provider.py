@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 
 from .base import Message, Provider
 
@@ -42,7 +41,18 @@ class OpenAIProvider(Provider):
         if tools:
             kwargs["tools"] = tools
 
-        resp = await self._client.chat.completions.create(**kwargs)
+        try:
+            resp = await self._client.chat.completions.create(**kwargs)
+        except BadRequestError as exc:
+            # Some OpenAI-compatible providers (e.g. Groq + certain models) can
+            # fail tool parsing with `tool_use_failed`. Retry once without tools
+            # so conversational requests still succeed instead of crashing.
+            if tools and ("tool_use_failed" in str(exc) or "failed_generation" in str(exc)):
+                retry_kwargs = dict(kwargs)
+                retry_kwargs.pop("tools", None)
+                resp = await self._client.chat.completions.create(**retry_kwargs)
+            else:
+                raise
         choice = resp.choices[0]
         msg = choice.message
 

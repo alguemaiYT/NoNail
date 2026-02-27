@@ -54,7 +54,6 @@ class ProcessKillTool(Tool):
 
     async def run(self, *, pid: int, signal: int = 15, **_: Any) -> ToolResult:
         import os as _os
-        import signal as _sig
 
         try:
             _os.kill(pid, signal)
