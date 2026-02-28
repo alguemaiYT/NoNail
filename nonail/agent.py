@@ -131,7 +131,7 @@ class Agent:
     # Slash commands
     # ------------------------------------------------------------------
 
-    def _handle_slash(self, cmd: str) -> bool:
+    async def _handle_slash(self, cmd: str) -> bool:
         """Process a slash command. Returns True if handled (no LLM call)."""
         parts = cmd.strip().split(None, 1)
         command = parts[0].lower()
@@ -160,7 +160,10 @@ class Agent:
         handler = handlers[command]
         if handler is None:
             return False  # quit signal
-        handler(arg)
+        import asyncio
+        result = handler(arg)
+        if asyncio.iscoroutine(result):
+            await result
         return True
 
     def _cmd_help(self, _arg: str) -> None:
@@ -175,7 +178,7 @@ class Agent:
         cmds = [
             ("/help", "Show this help message"),
             ("/tools", "List all available tools (built-in + external)"),
-            ("/model [name]", "Show or switch the current LLM model"),
+            ("/model [name|list]", "Show/switch model or list all available"),
             ("/provider [name]", "Show or switch provider (openai, groq, anthropic)"),
             ("/config [key=value]", "Show or update config settings"),
             ("/history", "Show conversation history summary"),
@@ -213,13 +216,51 @@ class Agent:
         )
         console.print()
 
-    def _cmd_model(self, arg: str) -> None:
+    async def _cmd_model(self, arg: str) -> None:
+        if arg.lower() == "list":
+            console.print(
+                f"\n[nn.info]  Fetching models from [cyan]{self.config.provider}[/cyan]…[/nn.info]"
+            )
+            models = await self.provider.list_models()
+            if not models:
+                console.print(
+                    "[nn.error]  Could not retrieve models. "
+                    "Check your API key or provider.[/nn.error]\n"
+                )
+                return
+            table = Table(
+                title=f"Models — {self.config.provider}",
+                show_edge=False,
+                pad_edge=False,
+                box=None,
+            )
+            table.add_column("#", style="dim", justify="right", width=4)
+            table.add_column("Model ID", style="cyan", min_width=30)
+            table.add_column("Owner / Name", style="dim")
+            current = self.config.model
+            for i, m in enumerate(models, 1):
+                mid = m["id"]
+                owner = m.get("owned_by") or ""
+                if mid == current:
+                    label = f"[bold green]{mid} ◀ current[/bold green]"
+                else:
+                    label = mid
+                table.add_row(str(i), label, owner)
+            console.print()
+            console.print(table)
+            console.print(
+                f"\n[nn.dim]  {len(models)} model(s) available  •  "
+                f"Switch with: /model <model-id>[/nn.dim]\n"
+            )
+            return
         if not arg:
             console.print(
                 f"[nn.info]  Current model: [cyan]{self.config.model}[/cyan] "
                 f"(provider: [cyan]{self.config.provider}[/cyan])[/nn.info]"
             )
-            console.print("[nn.dim]  Usage: /model <model-name>[/nn.dim]")
+            console.print(
+                "[nn.dim]  Usage: /model <model-name>  |  /model list[/nn.dim]"
+            )
             return
         old = self.config.model
         self.config.model = arg
@@ -459,7 +500,7 @@ class Agent:
                     if user_input.lower() in ("/quit", "/exit"):
                         console.print("[nn.dim]Goodbye![/nn.dim]")
                         break
-                    self._handle_slash(user_input)
+                    await self._handle_slash(user_input)
                     continue
 
                 # Regular LLM call

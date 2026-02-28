@@ -115,3 +115,18 @@ class AnthropicProvider(Provider):
             content="\n".join(text_parts) if text_parts else None,
             tool_calls=tool_calls if tool_calls else None,
         )
+
+    async def list_models(self) -> list[dict]:
+        """Fetch available models from the Anthropic /v1/models endpoint."""
+        try:
+            page = await self._client.models.list(limit=100)
+            models = []
+            for m in page.data:
+                models.append({
+                    "id": m.id,
+                    "owned_by": getattr(m, "display_name", None),
+                })
+            models.sort(key=lambda x: x["id"])
+            return models
+        except Exception:
+            return []

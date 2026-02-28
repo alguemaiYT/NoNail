@@ -30,3 +30,11 @@ class Provider(ABC):
     ) -> Message:
         """Send messages (with optional tool schemas) and get a response."""
         ...
+
+    async def list_models(self) -> list[dict]:
+        """Return available models from the provider API.
+
+        Each entry: {"id": str, "owned_by": str | None}.
+        Override in subclasses that support the models endpoint.
+        """
+        return []

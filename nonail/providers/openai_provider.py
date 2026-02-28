@@ -75,3 +75,18 @@ class OpenAIProvider(Provider):
             content=msg.content,
             tool_calls=tool_calls,
         )
+
+    async def list_models(self) -> list[dict]:
+        """Fetch available models from the OpenAI-compatible /v1/models endpoint."""
+        try:
+            page = await self._client.models.list()
+            models = []
+            for m in page.data:
+                models.append({
+                    "id": m.id,
+                    "owned_by": getattr(m, "owned_by", None),
+                })
+            models.sort(key=lambda x: x["id"])
+            return models
+        except Exception:
+            return []
