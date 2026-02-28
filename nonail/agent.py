@@ -21,7 +21,9 @@ from rich.theme import Theme
 
 from .config import Config, DEFAULT_API_KEY_ENV_BY_PROVIDER, DEFAULT_CONFIG_PATH
 from .providers import PROVIDERS, Message, create_provider
-from .tools import ALL_TOOLS
+from .tools import ALL_TOOLS, load_custom_tools, save_custom_tool, remove_custom_tool
+from .tools.dynamic import DynamicTool, SuggestToolTool
+from .tools.packages import PackageManagerTool
 
 # ---------------------------------------------------------------------------
 # Custom Rich theme
@@ -67,6 +69,7 @@ class Agent:
         ]
         self._tool_call_count = 0
         self._start_time = time.time()
+        self._setup_approval_callbacks()
 
     # ------------------------------------------------------------------
     # External MCP
@@ -84,6 +87,95 @@ class Agent:
             self._mcp_manager = manager
             self.tools.extend(external_tools)
             self._tools_by_name = {t.name: t for t in self.tools}
+
+    def _load_custom_tools(self) -> None:
+        """Load user-defined YAML tools from ~/.nonail/custom-tools/."""
+        custom = load_custom_tools()
+        if custom:
+            self.tools.extend(custom)
+            self._tools_by_name = {t.name: t for t in self.tools}
+
+    def _setup_approval_callbacks(self) -> None:
+        """Wire approval prompts for package_manager and suggest_tool."""
+        for tool in self.tools:
+            if isinstance(tool, PackageManagerTool):
+                tool.approval_callback = self._approve_package_action
+            elif isinstance(tool, SuggestToolTool):
+                tool.approval_callback = self._approve_tool_suggestion
+
+    async def _approve_package_action(self, message: str) -> bool:
+        """Show package install/remove approval prompt."""
+        console.print()
+        console.print(
+            Panel(
+                f"[yellow]{message}[/yellow]",
+                title="[bold yellow]🔧 Package Manager[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+        try:
+            answer = console.input("[bold yellow]  Proceed? [Y/n] › [/bold yellow]").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer in ("", "y", "yes")
+
+    async def _approve_tool_suggestion(self, spec: dict[str, Any]) -> bool:
+        """Show rich tool suggestion panel and get user decision."""
+        from rich.text import Text as RText
+
+        info = RText()
+        info.append(f"Name:    {spec['name']}\n", style="cyan")
+        info.append(f"Desc:    {spec.get('description', '')}\n", style="white")
+        info.append(f"Type:    {spec.get('type', 'shell')}\n", style="dim")
+        if spec.get("command_template"):
+            info.append(f"Command: {spec['command_template']}\n", style="green")
+        if spec.get("python_code"):
+            info.append(f"Code:    {spec['python_code'][:100]}...\n", style="green")
+        if spec.get("requires"):
+            info.append(f"Requires: {', '.join(spec['requires'])}\n", style="yellow")
+        if spec.get("parameters"):
+            info.append("\nParameters:\n", style="bold")
+            for pname, pdef in spec["parameters"].items():
+                desc = pdef.get("description", "")
+                ptype = pdef.get("type", "string")
+                info.append(f"  • {pname} ({ptype}): {desc}\n", style="dim")
+
+        console.print()
+        console.print(
+            Panel(
+                info,
+                title="[bold magenta]🧩 Tool Suggestion[/bold magenta]",
+                subtitle="[A]pprove  [E]dit  [R]eject",
+                border_style="magenta",
+            )
+        )
+        try:
+            choice = console.input("[bold magenta]  Choice › [/bold magenta]").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+
+        if choice in ("a", "approve"):
+            path = save_custom_tool(spec)
+            # Hot-load into current session
+            new_tool = DynamicTool(spec, source_path=path)
+            self.tools.append(new_tool)
+            self._tools_by_name[new_tool.name] = new_tool
+            console.print(f"[nn.agent]  ✓ Tool '{spec['name']}' saved to {path} and loaded.[/nn.agent]")
+            return True
+        elif choice in ("e", "edit"):
+            console.print("[nn.info]  Edit the YAML spec (Ctrl+D to finish):[/nn.info]")
+            import yaml as _yaml
+            console.print(f"[dim]{_yaml.safe_dump(spec, default_flow_style=False)}[/dim]")
+            console.print("[nn.dim]  (Editing not yet implemented — saving as-is)[/nn.dim]")
+            path = save_custom_tool(spec)
+            new_tool = DynamicTool(spec, source_path=path)
+            self.tools.append(new_tool)
+            self._tools_by_name[new_tool.name] = new_tool
+            console.print(f"[nn.agent]  ✓ Tool '{spec['name']}' saved and loaded.[/nn.agent]")
+            return True
+        else:
+            console.print("[nn.dim]  Tool suggestion rejected.[/nn.dim]")
+            return False
 
     # ------------------------------------------------------------------
     # Core loop
@@ -177,7 +269,7 @@ class Agent:
         table.add_column("Description", style="white")
         cmds = [
             ("/help", "Show this help message"),
-            ("/tools", "List all available tools (built-in + external)"),
+            ("/tools [add|remove]", "List, add, or remove tools"),
             ("/model [name|list]", "Show/switch model or list all available"),
             ("/provider [name]", "Show or switch provider (openai, groq, anthropic)"),
             ("/config [key=value]", "Show or update config settings"),
@@ -194,27 +286,88 @@ class Agent:
         console.print(table)
         console.print()
 
-    def _cmd_tools(self, _arg: str) -> None:
+    def _cmd_tools(self, arg: str) -> None:
+        if arg.startswith("add "):
+            self._tools_add(arg[4:].strip())
+            return
+        if arg.startswith("remove "):
+            self._tools_remove(arg[7:].strip())
+            return
+
+        builtin_names = {t.name for t in ALL_TOOLS}
+        custom_tools = load_custom_tools()
+        custom_names = {t.name for t in custom_tools}
+
         table = Table(title="Available Tools", show_lines=False, pad_edge=False)
         table.add_column("#", style="dim", justify="right", width=3)
         table.add_column("Tool", style="cyan", min_width=24)
         table.add_column("Description", style="white")
-        builtin_count = len(ALL_TOOLS)
         for i, t in enumerate(self.tools, 1):
-            marker = "" if i <= builtin_count else " [dim](external)[/dim]"
+            if t.name in custom_names:
+                marker = " [magenta](custom)[/magenta]"
+            elif t.name not in builtin_names:
+                marker = " [dim](external)[/dim]"
+            else:
+                marker = ""
             table.add_row(str(i), t.name + marker, t.description)
         console.print()
         console.print(table)
-        console.print(
-            f"\n[nn.dim]  {builtin_count} built-in"
-            + (
-                f" + {len(self.tools) - builtin_count} external"
-                if len(self.tools) > builtin_count
-                else ""
-            )
-            + "[/nn.dim]"
-        )
-        console.print()
+        ext = len(self.tools) - len(ALL_TOOLS) - len(custom_tools)
+        parts = [f"{len(ALL_TOOLS)} built-in"]
+        if custom_tools:
+            parts.append(f"{len(custom_tools)} custom")
+        if ext > 0:
+            parts.append(f"{ext} external")
+        console.print(f"\n[nn.dim]  {' + '.join(parts)}[/nn.dim]")
+        console.print("[nn.dim]  Manage: /tools add <name>  |  /tools remove <name>[/nn.dim]\n")
+
+    def _tools_add(self, name: str) -> None:
+        """Interactive add a custom YAML tool."""
+        if not name:
+            console.print("[nn.error]  Usage: /tools add <tool-name>[/nn.error]")
+            return
+        try:
+            desc = console.input("[nn.info]  Description: [/nn.info]").strip()
+            ttype = console.input("[nn.info]  Type (shell/python) [shell]: [/nn.info]").strip() or "shell"
+            if ttype == "shell":
+                cmd = console.input("[nn.info]  Command template: [/nn.info]").strip()
+            else:
+                cmd = console.input("[nn.info]  Python code: [/nn.info]").strip()
+            requires_raw = console.input("[nn.info]  Requires (comma-sep, or empty): [/nn.info]").strip()
+            requires = [r.strip() for r in requires_raw.split(",") if r.strip()] if requires_raw else []
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[nn.dim]  Cancelled.[/nn.dim]")
+            return
+
+        spec: dict[str, Any] = {
+            "name": name,
+            "description": desc,
+            "type": ttype,
+        }
+        if ttype == "shell":
+            spec["command_template"] = cmd
+        else:
+            spec["python_code"] = cmd
+        if requires:
+            spec["requires"] = requires
+
+        path = save_custom_tool(spec)
+        new_tool = DynamicTool(spec, source_path=path)
+        self.tools.append(new_tool)
+        self._tools_by_name[new_tool.name] = new_tool
+        console.print(f"[nn.agent]  ✓ Tool '{name}' created at {path} and loaded.[/nn.agent]")
+
+    def _tools_remove(self, name: str) -> None:
+        """Remove a custom tool by name."""
+        if not name:
+            console.print("[nn.error]  Usage: /tools remove <tool-name>[/nn.error]")
+            return
+        if remove_custom_tool(name):
+            self.tools = [t for t in self.tools if t.name != name]
+            self._tools_by_name.pop(name, None)
+            console.print(f"[nn.agent]  ✓ Custom tool '{name}' removed.[/nn.agent]")
+        else:
+            console.print(f"[nn.error]  Custom tool '{name}' not found.[/nn.error]")
 
     async def _cmd_model(self, arg: str) -> None:
         if arg.lower() == "list":
@@ -478,6 +631,7 @@ class Agent:
 
     async def chat_loop(self) -> None:
         """Interactive REPL loop with slash-command support."""
+        self._load_custom_tools()
         await self._load_external_tools()
         self._print_banner()
         console.print()

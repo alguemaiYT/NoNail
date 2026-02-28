@@ -22,7 +22,8 @@ It runs in two modes:
 - 🔌 **MCP-compatible** — plug into any MCP client as a standard tool server
 - 🔄 **Provider-agnostic** — swap between OpenAI, Anthropic, OpenRouter, or local LLMs via config
 - 🖥️ **Full computer access** — bash, files, processes, system info — all exposed to the LLM
-- 🧩 **Extensible** — add new tools by implementing a simple `Tool` base class
+- 🧩 **Extensible** — add new tools by implementing `Tool` ABC, YAML specs, or let the LLM suggest them
+- 🔧 **Package Manager** — auto-detects apt/dnf/pacman/brew and lets the LLM install dependencies with user approval
 - ⚡ **Minimal** — no bloat, no frameworks, just Python + the MCP SDK
 
 ---
@@ -216,8 +217,10 @@ Add NoNail to any MCP client by pointing it at `nonail serve`:
 | `process_list` | List running processes |
 | `process_kill` | Send signals to processes |
 | `system_info` | OS, arch, env, network info |
+| `package_manager` | Install/remove/search system packages (auto-detects apt/dnf/pacman/brew/etc) |
+| `suggest_tool` | LLM proposes a new custom tool for user approval |
 
-Run `nonail tools` to see all available tools.
+Run `nonail tools` or `/tools` inside chat to see all available tools (including custom ones).
 
 ### Daily automation ideas
 
@@ -225,6 +228,71 @@ Run `nonail tools` to see all available tools.
 - **Workspace hygiene:** combine `search_text`, `copy_path`, `move_path`, and `delete_path` for file cleanup/refactors.
 - **Background jobs:** start long tasks with `start_background_command` and inspect with `process_list`.
 - **Scripting on demand:** use `run_python` for quick local data transformations and automation helpers.
+
+### Custom Tools & Dynamic Tool Creation
+
+NoNail supports user-defined custom tools stored as YAML files in `~/.nonail/custom-tools/`. These are loaded automatically at startup.
+
+#### Creating custom tools manually
+
+```yaml
+# ~/.nonail/custom-tools/screenshot.yaml
+name: screenshot
+description: "Capture a screenshot of the current desktop"
+type: shell
+command_template: "scrot {output}"
+parameters:
+  output:
+    type: string
+    required: true
+    description: "Output file path"
+requires:
+  - scrot
+```
+
+Or via the interactive CLI:
+
+```
+/tools add screenshot
+  Description: Capture a screenshot
+  Type (shell/python) [shell]: shell
+  Command template: scrot {output}
+  Requires (comma-sep): scrot
+✓ Tool 'screenshot' created and loaded.
+```
+
+#### LLM-suggested tools
+
+The LLM can dynamically propose new tools using the `suggest_tool` capability. When it does, you'll see:
+
+```
+╭─ 🧩 Tool Suggestion ──────────────────────────╮
+│ Name:    screenshot                            │
+│ Desc:    Capture desktop screenshot            │
+│ Type:    shell                                 │
+│ Command: scrot {output}                        │
+│ Requires: scrot                                │
+│                                                │
+│ [A]pprove  [E]dit  [R]eject                    │
+╰────────────────────────────────────────────────╯
+```
+
+Approved tools are saved as YAML and immediately available in the session.
+
+#### Package Manager
+
+The `package_manager` tool auto-detects your system's package manager and provides unified operations. The LLM can use it to install missing dependencies:
+
+```
+🔧 Package Manager
+   The agent wants to install package(s):
+   • ffmpeg
+   Command: sudo apt install -y ffmpeg
+   Package manager: apt
+   Proceed? [Y/n] ›
+```
+
+Supported: apt, dnf, yum, pacman, zypper, brew, apk, pkg.
 
 ---
 
@@ -300,7 +368,7 @@ nonail zombie     🧟 Remote master/slave control (BETA)
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all commands |
-| `/tools` | List all loaded tools |
+| `/tools [add\|remove]` | List, add, or remove tools (built-in + custom + external) |
 | `/model [name\|list]` | Show/switch model or list all available from provider API |
 | `/provider [name]` | Show/switch provider |
 | `/config [key=value\|save]` | Show/update/save config |
