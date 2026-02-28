@@ -285,13 +285,110 @@ api_key_env: NONAIL_API_KEY  # set to any non-empty string
 ## CLI Reference
 
 ```
-nonail chat       Interactive chat session
+nonail chat       Interactive chat session (with /slash commands)
 nonail run MSG    Run a single prompt
 nonail serve      Start MCP server (stdio)
 nonail tools      List available tools
 nonail init       Generate default config
 nonail doctor     Check configuration health
+nonail mcp        Manage external community MCP servers
+nonail zombie     🧟 Remote master/slave control (BETA)
 ```
+
+### Slash Commands (inside `nonail chat`)
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all commands |
+| `/tools` | List all loaded tools |
+| `/model [name\|list]` | Show/switch model or list all available from provider API |
+| `/provider [name]` | Show/switch provider |
+| `/config [key=value\|save]` | Show/update/save config |
+| `/history` | Conversation summary |
+| `/clear` | Reset conversation |
+| `/compact` | Trim old context |
+| `/status` | Session stats |
+| `/mcp` | Show external MCP servers |
+| `/quit` | Exit |
+
+---
+
+## 🧟 Zombie Mode (Experimental / BETA)
+
+Remote master/slave system: a central master controls multiple machines (slaves) via WebSocket. Users send commands through **Telegram**, **WhatsApp**, or **Discord** — the master routes them to slaves and returns results.
+
+> **This is an experimental feature.** Enable it with `export NONAIL_ZOMBIE=1` or the `--experimental` flag.
+
+### Architecture
+
+```
+  [User]
+     │ Telegram / WhatsApp / Discord
+     ▼
+  [MASTER]  ◄── nonail zombie master start
+  WebSocket Server (asyncio)
+  Slave Registry + Bot Layer
+     │ WebSocket (HMAC-SHA256 auth)
+     ├──► [SLAVE-1] — runs NoNail tools
+     ├──► [SLAVE-2]
+     └──► [SLAVE-N]
+```
+
+### Quick Start
+
+```bash
+# 1. On the control machine — start master
+export NONAIL_ZOMBIE=1
+nonail zombie master start --port 8765 --password my-secret
+
+# 2. On each target machine — start slave
+export NONAIL_ZOMBIE=1
+nonail zombie slave start --host 192.168.1.100 --port 8765 --password my-secret
+
+# 3. (Optional) Configure messaging bots
+nonail zombie config   # interactive wizard for Telegram/WhatsApp/Discord
+nonail zombie master start --config ~/.nonail/zombie/master.yaml
+```
+
+### Messaging Setup
+
+| Platform | Library | Config Key | Auth |
+|----------|---------|------------|------|
+| **Telegram** | aiogram 3.x | `messaging.telegram.token` | `allowed_users` (Telegram user IDs) |
+| **WhatsApp** | Twilio | `messaging.whatsapp.account_sid` | `allowed_numbers` (phone numbers) |
+| **Discord** | discord.py | `messaging.discord.token` | `allowed_guild_ids` + `channel_id` |
+
+Install messaging dependencies:
+```bash
+pip install nonail[telegram]   # or [whatsapp] [discord] [zombie] for all
+```
+
+### Sending Commands via Messaging
+
+```
+# Telegram / WhatsApp / Discord:
+uptime                        # → runs on first connected slave
+@slave-2 ls /var/log          # → runs on specific slave
+/slaves                       # → list connected slaves
+```
+
+### Install as System Service
+
+```bash
+# Linux (systemd)
+nonail zombie slave service install --host 192.168.1.100 --password my-secret
+
+# Check status / remove
+nonail zombie slave service status
+nonail zombie slave service uninstall
+```
+
+### Security
+
+- HMAC-SHA256 on every message (password never sent in plaintext)
+- Replay protection: timestamp ±30s tolerance
+- Per-platform user whitelists
+- Audit log at `~/.nonail/zombie/master.log`
 
 ---
 
