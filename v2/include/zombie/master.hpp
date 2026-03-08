@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <mutex>
 #include <functional>
 #include <atomic>
 #include <nlohmann/json.hpp>
@@ -16,6 +17,7 @@ struct SlaveInfo {
     std::string status = "connected";
     std::map<std::string, std::string> meta;
     double last_seen = 0.0;
+    int fd = -1;   // live socket fd to the slave
 };
 
 class ZombieMaster {
@@ -28,7 +30,7 @@ public:
     void run();   // blocking
     void stop();
 
-    // Send command to specific slave
+    // Send command to specific slave and return output (blocking)
     std::string send_command(const std::string& slave_id, const std::string& command);
 
     // Broadcast command to all slaves
@@ -42,11 +44,15 @@ private:
     int port_;
     std::atomic<bool> running_{false};
 
+    mutable std::mutex slaves_mutex_;
     std::map<std::string, SlaveInfo> slaves_;
 
     bool authenticate(const std::string& token) const;
     void handle_connection(int fd);
     void heartbeat_loop();
+
+    // Read from fd until marker is found
+    std::string recv_until(int fd, const std::string& marker) const;
 };
 
 class ZombieSlave {
