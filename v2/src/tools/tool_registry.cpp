@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <sys/wait.h>
 
 namespace nonail {
 
@@ -65,18 +66,28 @@ void ToolRegistry::register_defaults() {
         },
         [](const nlohmann::json& args) -> ToolResult {
             std::string cmd = args.at("command").get<std::string>();
+            // Escape single quotes in the command for bash -c '...'
+            std::string escaped;
+            for (char c : cmd) {
+                if (c == '\'') escaped += "'\\''";
+                else escaped += c;
+            }
+            // Use bash -c so globs, pipelines, redirects all work correctly
+            std::string bash_cmd = "bash -c 'shopt -s nullglob; " + escaped + "' 2>&1";
+
             std::array<char, 4096> buf;
             std::string output;
 
-            FILE* pipe = popen(cmd.c_str(), "r");
+            FILE* pipe = popen(bash_cmd.c_str(), "r");
             if (!pipe) return {false, "", "Failed to execute command"};
 
             while (fgets(buf.data(), buf.size(), pipe)) {
                 output += buf.data();
             }
-            int status = pclose(pipe);
+            int raw = pclose(pipe);
+            int exit_code = WIFEXITED(raw) ? WEXITSTATUS(raw) : -1;
 
-            return {status == 0, output, status != 0 ? "Exit code: " + std::to_string(status) : ""};
+            return {exit_code == 0, output, exit_code != 0 ? "Exit code: " + std::to_string(exit_code) : ""};
         }
     });
 
