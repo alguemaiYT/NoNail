@@ -142,15 +142,16 @@ void Agent::handle_tool_calls(const Message& response) {
     for (auto& tc : response.tool_calls) {
         std::string name = tc["function"]["name"];
         std::string args_str = tc["function"]["arguments"];
-        std::string tool_id = tc["id"];
+        std::string tool_id = tc.value("id", "");
 
-        std::cout << "🔧 " << name << "(" << args_str << ")\n";
-
+        // Print what the agent is doing
         nlohmann::json args;
-        try {
-            args = nlohmann::json::parse(args_str);
-        } catch (...) {
-            args = nlohmann::json::object();
+        try { args = nlohmann::json::parse(args_str); } catch (...) {}
+
+        if (name == "shell_execute" && args.contains("command")) {
+            std::cout << "[shell] $ " << args["command"].get<std::string>() << "\n";
+        } else {
+            std::cout << "[tool:" << name << "] " << args_str << "\n";
         }
 
         ToolResult result;
@@ -161,7 +162,11 @@ void Agent::handle_tool_calls(const Message& response) {
         }
 
         std::string output = result.success ? result.output : ("ERROR: " + result.error);
-        if (output.size() > 4000) output = output.substr(0, 4000) + "\n... (truncated)";
+        if (!output.empty() && output.back() != '\n') output += "\n";
+        if (output.size() > 4000) output = output.substr(0, 4000) + "\n... (truncated)\n";
+
+        // Show tool output
+        if (!output.empty()) std::cout << output;
 
         history_.push_back({"tool", output, tool_id, {}});
     }
@@ -209,21 +214,29 @@ void Agent::chat_loop() {
         // Add user message
         history_.push_back({"user", input, "", {}});
 
-        // Call LLM with streaming
-        std::cout << "\nNoNail> ";
+        std::cout << "\nNoNail> " << std::flush;
         try {
-            auto response = call_llm(true);
-            history_.push_back(response);
-
-            // Handle tool calls (non-streaming loop)
-            while (!response.tool_calls.empty()) {
-                handle_tool_calls(response);
-                std::cout << "\nNoNail> ";
-                response = call_llm(true);
+            // Use non-streaming so tool_calls are captured correctly.
+            // Print response content ourselves for a similar UX.
+            int max_iterations = 10;
+            for (int i = 0; i < max_iterations; ++i) {
+                auto response = call_llm(false);
                 history_.push_back(response);
+
+                // Print any text content
+                if (!response.content.empty()) {
+                    std::cout << response.content << "\n";
+                }
+
+                // If no tool calls, we are done
+                if (response.tool_calls.empty()) break;
+
+                // Execute tools and continue the loop
+                handle_tool_calls(response);
+                std::cout << "\nNoNail> " << std::flush;
             }
         } catch (const std::exception& e) {
-            std::cout << "\n❌ Error: " << e.what() << "\n";
+            std::cout << "\nError: " << e.what() << "\n";
         }
         std::cout << "\n";
     }

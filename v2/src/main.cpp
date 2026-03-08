@@ -1,5 +1,6 @@
 #include "core/agent.hpp"
 #include "core/config.hpp"
+#include "organizer/system_organizer.hpp"
 
 #include <iostream>
 #include <string>
@@ -35,6 +36,7 @@ static void print_usage() {
               << "  devices exec <ip> <cmd>  Execute command on device\n"
 #endif
               << "  config                Show configuration\n"
+              << "  organize home [--dry-run]  AI-powered home dir organizer\n"
               << "  help                  Show this help\n"
               << "  version               Show version\n\n"
               << "Config: ~/.nonail/config.json\n";
@@ -119,6 +121,33 @@ static void cmd_devices_exec(const std::string& ip, const std::string& cmd) {
 }
 #endif
 
+static void cmd_organize(nonail::Config& cfg, bool dry_run) {
+    if (cfg.api_key.empty()) {
+        std::cerr << "❌ No API key configured.\n";
+        return;
+    }
+
+    const char* home = std::getenv("HOME");
+    std::string target = home ? home : "/home";
+
+    std::cout << "\n📂 Target directory: " << target << "\n";
+    std::cout << "🔌 Provider: " << cfg.provider << " / " << cfg.model << "\n";
+    if (dry_run) {
+        std::cout << "[dry-run mode — no files will be moved]\n";
+    }
+
+    std::cout << "\nProceed? [y/N] ";
+    std::string answer;
+    std::getline(std::cin, answer);
+    if (answer != "y" && answer != "Y") {
+        std::cout << "Aborted.\n";
+        return;
+    }
+
+    nonail::SystemOrganizer organizer(cfg);
+    organizer.organize(target, dry_run);
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         print_usage();
@@ -153,6 +182,12 @@ int main(int argc, char* argv[]) {
         cmd_run(cfg, message);
     } else if (cmd == "config") {
         std::cout << cfg.to_json().dump(2) << "\n";
+    } else if (cmd == "organize") {
+        bool dry_run = false;
+        for (int i = 2; i < argc; ++i) {
+            if (std::string(argv[i]) == "--dry-run") dry_run = true;
+        }
+        cmd_organize(cfg, dry_run);
 #ifdef NONAIL_WEB
     } else if (cmd == "web") {
         int port = 0;

@@ -54,6 +54,7 @@ add_library(nonail-core STATIC
     src/providers/provider.cpp
     src/tools/tool_registry.cpp
     src/tools/shell_tool.cpp
+    src/organizer/system_organizer.cpp
 )
 target_include_directories(nonail-core PUBLIC include)
 target_link_libraries(nonail-core PUBLIC

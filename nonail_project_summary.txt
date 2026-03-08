@@ -1,0 +1,163 @@
+================================================================================
+  NONAIL — RESUMO DO PROJETO
+  Xiaomi Mi Router 4A Gigabit Edition (16MB flash / 128MB RAM, MT7621)
+================================================================================
+
+OBJETIVO PRINCIPAL
+------------------
+Criar um agente de IA provider-agnóstico (NoNail) em C++ que:
+  - Roda nativamente no roteador OpenWrt (ramips/mt7621)
+  - Controla dispositivos conectados ao roteador via modo Zombie
+  - Permite ao usuário dar comandos em linguagem natural e o agente executa
+    ações reais no sistema (mv, mkdir, ls, iptables, etc.) usando ferramentas
+
+--------------------------------------------------------------------------------
+ARQUITETURA
+--------------------------------------------------------------------------------
+
+  [PC ou Roteador]           [Dispositivos conectados]
+  ┌─────────────┐            ┌─────────────────────────┐
+  │ nonail run  │ ──TCP──▶   │ zombie slave (qualquer  │
+  │ (master +   │ ◀──TCP──   │ Linux conectado ao      │
+  │  agente LLM)│            │ roteador)               │
+  └─────────────┘            └─────────────────────────┘
+
+Modos de operação:
+  - `nonail chat`   → REPL interativo (readline)
+  - `nonail run`    → executa um prompt e retorna (modo script/automação)
+  - `nonail serve`  → servidor MCP (para Claude Desktop, Cursor, VS Code)
+  - `nonail zombie` → modo mestre/escravo TCP para controle remoto de devices
+
+--------------------------------------------------------------------------------
+O QUE JÁ ESTÁ PRONTO (v2 C++)
+--------------------------------------------------------------------------------
+
+  ✅ Build C++ completo (CMake, sem dependências Python)
+  ✅ Provedores LLM: OpenAI, Anthropic, Groq, Gemini
+       - Groq: llama-3.1-8b-instant / llama-3.3-70b-versatile
+       - Gemini: models/gemini-2.5-flash
+  ✅ Fallback automático de provedor em rate-limit
+       Ordem: Gemini → Anthropic → OpenAI → Groq
+  ✅ Cache SQLite (LLM responses + tool results)
+  ✅ 4 ferramentas built-in:
+       - shell_execute  (bash -c, suporta globs, pipes, redirecionamentos)
+       - file_read
+       - file_write
+       - list_directory
+  ✅ Loop de tool-use funcionando (modo não-streaming para capturar tool_calls)
+  ✅ Zombie Master/Slave TCP com autenticação HMAC
+       - Master mantém conexão viva por slave em thread dedicada
+       - send_command() com timeout de 10s (poll-based recv_until)
+       - Mutex para thread safety
+  ✅ Web UI (porta 8080) via libmicrohttpd
+  ✅ 16 testes unitários passando
+
+--------------------------------------------------------------------------------
+REQUISITOS PARA RODAR NO ROTEADOR
+--------------------------------------------------------------------------------
+
+  Hardware: Xiaomi Mi Router 4A Gigabit Edition
+  Flash:    16MB  (OpenWrt ~3.5MB + ~12MB disponível)
+  RAM:      128MB (agente usa ~15-25MB em runtime)
+
+  Dependências em runtime:
+    opkg install libcurl libstdc++ libsqlite3
+
+  Tamanho estimado após cross-compile (MIPS, -Os, stripped):
+    nonail binary:  ~400 KB
+    libcurl:        ~300 KB
+    libssl:         ~800 KB
+    libstdc++:      ~1.5 MB
+    libsqlite3:     ~300 KB
+    TOTAL:          ~3.3 MB  → cabe folgado nos 12MB disponíveis
+
+  Para cross-compilar:
+    - OpenWrt SDK para ramips/mt7621
+    - cmake com toolchain file MIPS musl
+    - make && scp nonail root@192.168.31.1:/usr/bin/
+
+  Config no roteador (/etc/nonail/config.json):
+    {
+      "provider": "groq",
+      "model": "llama-3.1-8b-instant",
+      "api_key": "SUA_GROQ_API_KEY"
+    }
+
+--------------------------------------------------------------------------------
+MODO ZOMBIE — CONTROLE DE DISPOSITIVOS CONECTADOS
+--------------------------------------------------------------------------------
+
+  Objetivo: o roteador (master) controla qualquer dispositivo Linux
+  conectado a ele via TCP, executando comandos shell remotamente.
+
+  Como funciona:
+    1. Slave roda em qualquer dispositivo da rede local
+       → binário mínimo ~80-150KB, só precisa de libc
+    2. Slave conecta ao master (roteador) via TCP
+    3. Autenticação HMAC-SHA256 com token baseado em timestamp
+    4. Master (agente LLM) envia comandos, slave executa e retorna output
+
+  Casos de uso no roteador:
+    - Listar/bloquear dispositivos: `iptables`, `nmap`, `arp`
+    - Monitorar tráfego: `tc`, `iftop`, `nethogs`
+    - Gerenciar DNS/DHCP: editar `/etc/hosts`, `uci`
+    - Reiniciar serviços: `service dnsmasq restart`
+    - Tudo via linguagem natural: "bloqueie o dispositivo 192.168.1.50"
+
+--------------------------------------------------------------------------------
+O QUE FALTA IMPLEMENTAR
+--------------------------------------------------------------------------------
+
+  [ ] Cross-compilation CMake toolchain file para MT7621 (musl + OpenWrt SDK)
+  [ ] Target `make openwrt` no CMakeLists.txt
+  [ ] Slave-only build target (binário mínimo, sem curl/sqlite, só libc)
+  [ ] Servidor zombie como serviço OpenWrt (/etc/init.d/nonail)
+  [ ] Remover scripts/zombie_organizer.py (substituído pelo agente)
+  [ ] Remover src/organizer/system_organizer.* (abordagem errada, user rejeitou)
+  [ ] Testar nonail chat/run diretamente no roteador via SSH
+
+--------------------------------------------------------------------------------
+ARQUITETURA DE ARQUIVOS (v2/)
+--------------------------------------------------------------------------------
+
+  v2/
+  ├── include/
+  │   ├── core/          agent.hpp, config.hpp, cache.hpp
+  │   ├── providers/     base.hpp, openai.hpp, anthropic.hpp, groq.hpp, gemini.hpp
+  │   ├── tools/         tool_registry.hpp
+  │   ├── zombie/        master.hpp, slave.hpp
+  │   └── web/           server.hpp
+  ├── src/
+  │   ├── core/          agent.cpp, config.cpp, cache.cpp
+  │   ├── providers/     provider.cpp (factory)
+  │   ├── tools/         tool_registry.cpp  ← shell_execute usa bash -c
+  │   ├── zombie/        master.cpp, slave.cpp
+  │   ├── web/           server.cpp
+  │   └── main.cpp
+  └── tests/             test_providers.cpp (16 testes)
+
+--------------------------------------------------------------------------------
+DETALHES TÉCNICOS IMPORTANTES
+--------------------------------------------------------------------------------
+
+  - shell_execute: wraps cmd em `bash -c 'shopt -s nullglob; <cmd>' 2>&1`
+    para suportar globs (*.png), pipes (|), redirecionamentos (>)
+
+  - Tool-use: chat_loop usa call_llm(false) (não-streaming) porque
+    streaming SSE só envia delta.content — tool_calls só vêm no response
+    completo do /chat/completions
+
+  - Gemini endpoint: https://generativelanguage.googleapis.com/v1beta/openai
+    (sem trailing slash — causa "openai//chat/completions" 404 se tiver /)
+    Modelos precisam do prefixo: "models/gemini-2.5-flash"
+
+  - Cache: 4 tabelas SQLite: llm_cache, tool_cache, loop_runs, loop_events
+    Modos: aggressive (tudo), safe (só leitura), off
+
+  - Zombie auth: slave envia timestamp:hmac_hex → master responde AUTH_OK
+    → slave envia slave_id → comandos fluem bidireccionalmente
+
+================================================================================
+  v1/ = versão Python original (mantida para referência)
+  v2/ = versão C++ ativa (use esta)
+================================================================================
