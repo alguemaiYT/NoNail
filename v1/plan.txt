@@ -1,0 +1,26 @@
+Plano de Análise — Minimizar Footprint no OpenWrt sem Perder Funcionalidade
+
+Resumo:
+- Mapear footprint real (flash/RAM/CPU/tempo de start) e custos de cada dependência/funcionalidade.
+- Definir rota econômica para OpenWrt ≤64MB RAM, mantendo funcionalidades, UI texto simples intuitiva e seleção dinâmica de provider/model.
+- Produzir recomendação técnica comparando Python modular vs empacotamento binário vs reescrita parcial caso ganho >50%.
+
+Entregáveis:
+1. Linha de base de consumo e inicialização para cenários principais (`nonail chat`, `nonail run`, `nonail serve`, cache). 
+2. Auditoria de dependências e custo por subsistema (`pyproject`, `agent`, providers, tools). 
+3. Plano modular core + extras, com importações preguiçosas e separação de funcionalidades opcionais. 
+4. Proposta de interface texto simples com seleção dinâmica e comportamento seguro por provider/model. 
+5. Estudo de empacotamento mínimo (Python puro, Nuitka/PyOxidizer, reescrita) com projeção de flash/RAM.
+
+Testes de validação da análise:
+- Medir RSS, pico e tempo de start por modo. 
+- Confirmar funcionalidades via modularização. 
+- Validar seleção dinâmica de provider/model com UI texto simples. 
+- Confirmar cache e MCP server/cliente funcionando. 
+- Comparar footprint entre estratégias de empacotamento.
+
+Suposições:
+- Alvo: OpenWrt ≤64MB RAM e flash limitado.
+- Modularização permitida; funcionalidades acessíveis opcionalmente.
+- UI rica substituível por texto simples desde que mantenha seleção dinâmica.
+- Reescrita considerada apenas se ganho >50% e sem dependência de runtime extra.

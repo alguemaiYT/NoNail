@@ -10,3 +10,4 @@ build/
 .env.*
 config.yaml
 mcp-clients.json
+v2/build/

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nonail"
+version = "0.1.0"
+description = "NoNail — A simplified, MCP-compatible AI agent with full computer access. Inspired by ZeroClaw."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "openai>=1.0.0",
+    "anthropic>=0.30.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+telegram = ["aiogram>=3.0"]
+whatsapp = ["twilio>=8.0", "aiohttp>=3.9"]
+discord = ["discord.py>=2.3"]
+zombie = ["websockets>=13.0", "aiogram>=3.0", "twilio>=8.0", "aiohttp>=3.9", "discord.py>=2.3"]
+
+[project.scripts]
+nonail = "nonail.__main__:cli"
+
+[tool.setuptools.packages.find]
+include = ["nonail*"]
