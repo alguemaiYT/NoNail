@@ -74,6 +74,8 @@ void from_json(const nlohmann::json& j, Config& c) {
         const char* env_key = nullptr;
         if (c.provider == "openai")    env_key = std::getenv("OPENAI_API_KEY");
         if (c.provider == "anthropic") env_key = std::getenv("ANTHROPIC_API_KEY");
+        if (c.provider == "groq")      env_key = std::getenv("GROQ_API_KEY");
+        if (c.provider == "gemini")    env_key = std::getenv("GEMINI_API_KEY");
         if (!env_key) env_key = std::getenv("NONAIL_API_KEY");
         if (env_key) c.api_key = env_key;
     }
