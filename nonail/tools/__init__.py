@@ -21,6 +21,7 @@ from .filesystem import ListDirTool, ReadFileTool, SearchFilesTool, WriteFileToo
 from .packages import PackageManagerTool
 from .process import ProcessKillTool, ProcessListTool
 from .system import SystemInfoTool
+from .terminal import ExecTerminalTool
 
 ALL_TOOLS: list[Tool] = [
     BashTool(),
@@ -43,6 +44,7 @@ ALL_TOOLS: list[Tool] = [
     SystemInfoTool(),
     PackageManagerTool(),
     SuggestToolTool(),
+    ExecTerminalTool(),
 ]
 
 TOOLS_BY_NAME: dict[str, Tool] = {t.name: t for t in ALL_TOOLS}
@@ -76,4 +78,5 @@ __all__ = [
     "ProcessListTool",
     "ProcessKillTool",
     "SystemInfoTool",
+    "ExecTerminalTool",
 ]

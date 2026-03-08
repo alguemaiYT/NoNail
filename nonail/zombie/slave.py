@@ -8,8 +8,6 @@ import platform
 import time
 from typing import Any
 
-import websockets
-
 from .protocol import (
     MsgType,
     ZombieMessage,
@@ -74,6 +72,8 @@ class ZombieSlave:
 
     async def run(self) -> None:
         """Connect to master with exponential backoff reconnect."""
+        import websockets
+
         backoff = 1.0
         uri = f"ws://{self.master_host}:{self.master_port}"
 

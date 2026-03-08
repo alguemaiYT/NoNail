@@ -24,6 +24,8 @@ It runs in two modes:
 - 🖥️ **Full computer access** — bash, files, processes, system info — all exposed to the LLM
 - 🧩 **Extensible** — add new tools by implementing `Tool` ABC, YAML specs, or let the LLM suggest them
 - 🔧 **Package Manager** — auto-detects apt/dnf/pacman/brew and lets the LLM install dependencies with user approval
+- ⌨️ **CLI UX** — `/model` supports arrow-key selection and TAB completion is focused on slash commands/model IDs
+- 🚀 **Native acceleration** — performance-sensitive string matching paths use an optional C++ extension
 - ⚡ **Minimal** — no bloat, no frameworks, just Python + the MCP SDK
 
 ---
@@ -36,6 +38,8 @@ It runs in two modes:
 cd NoNail
 pip install -e .
 ```
+
+> During installation, NoNail builds the native C++ accelerator for your current device/CPU (when a C++ compiler is available).
 
 ### 2. Configure
 
@@ -301,7 +305,7 @@ Supported: apt, dnf, yum, pacman, zypper, brew, apk, pkg.
 NoNail reads from `~/.nonail/config.yaml` (create with `nonail init`):
 
 ```yaml
-provider: openai          # openai | anthropic | groq
+provider: openai          # openai | anthropic | groq | gemini
 model: gpt-4o             # any model supported by the provider
 # api_base: https://openrouter.ai/api/v1  # for OpenRouter / local LLMs
 api_key_env: OPENAI_API_KEY
@@ -310,7 +314,18 @@ max_iterations: 25
 mcp_server:
   enabled: true
   transport: stdio
+
+cache:
+  enabled: true
+  path: ~/.nonail/cache.db
+  mode: aggressive      # aggressive | safe | off
+  max_entries: 5000
+  ttl_seconds: 86400
 ```
+
+When a provider/model hits rate limits, NoNail can auto-fallback to another available provider key
+(priority: `GEMINI_API_KEY` → `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` → `GROQ_API_KEY`) while
+continuing to use the same SQLite cache.
 
 ### Using with OpenRouter
 
@@ -369,7 +384,7 @@ nonail zombie     🧟 Remote master/slave control (BETA)
 |---------|-------------|
 | `/help` | Show all commands |
 | `/tools [add\|remove]` | List, add, or remove tools (built-in + custom + external) |
-| `/model [name\|list]` | Show/switch model or list all available from provider API |
+| `/model [name\|list\|select]` | List models, select with arrows, or switch directly |
 | `/provider [name]` | Show/switch provider |
 | `/config [key=value\|save]` | Show/update/save config |
 | `/history` | Conversation summary |
@@ -377,6 +392,8 @@ nonail zombie     🧟 Remote master/slave control (BETA)
 | `/compact` | Trim old context |
 | `/status` | Session stats |
 | `/mcp` | Show external MCP servers |
+| `/cache [status\|clear\|mode\|bypass]` | Manage execution cache |
+| `/cache-limit <max_entries> [ttl_seconds]` | Tune SQLite cache limits |
 | `/quit` | Exit |
 
 ---

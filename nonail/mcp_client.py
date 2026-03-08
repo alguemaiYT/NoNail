@@ -6,6 +6,9 @@ their tools to the local agent alongside the built-in tools.
 
 Config is stored in ~/.nonail/mcp-clients.json, matching the format used
 by GitHub Copilot CLI (~/.copilot/mcp-config.json) for easy copy-paste.
+
+MCP SDK imports are deferred to runtime so this module can be imported
+without loading the SDK.
 """
 
 from __future__ import annotations
@@ -15,11 +18,10 @@ import os
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from mcp.client.sse import sse_client
+if TYPE_CHECKING:
+    from mcp import ClientSession
 
 from .tools.base import Tool, ToolResult
 
@@ -177,21 +179,14 @@ class MCPClientManager:
         self, servers: dict[str, ExternalMCPServer]
     ) -> list[MCPClientTool]:
         """Connect to every enabled server and return discovered proxy tools."""
-        from rich.console import Console
-
-        console = Console()
         enabled = {n: s for n, s in servers.items() if s.enabled}
         for server in enabled.values():
             try:
                 tools = await self._connect_server(server)
                 self._tools.extend(tools)
-                console.print(
-                    f"  [dim]🔌 MCP '{server.name}': {len(tools)} tool(s) loaded[/dim]"
-                )
+                print(f"  🔌 MCP '{server.name}': {len(tools)} tool(s) loaded")
             except Exception as exc:
-                console.print(
-                    f"  [yellow]⚠ MCP '{server.name}' failed: {exc}[/yellow]"
-                )
+                print(f"  ⚠ MCP '{server.name}' failed: {exc}")
         return self._tools
 
     async def _connect_server(
@@ -205,6 +200,9 @@ class MCPClientManager:
             raise ValueError(f"Unknown transport type: '{server.type}'")
 
     async def _connect_stdio(self, server: ExternalMCPServer) -> list[MCPClientTool]:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
         # Inherit full environment so PATH is available for npx/node/python
         merged_env = {**os.environ, **server.env}
         params = StdioServerParameters(
@@ -221,6 +219,9 @@ class MCPClientManager:
         return await self._discover_tools(session, server)
 
     async def _connect_sse(self, server: ExternalMCPServer) -> list[MCPClientTool]:
+        from mcp import ClientSession
+        from mcp.client.sse import sse_client
+
         transport = await self._exit_stack.enter_async_context(
             sse_client(server.url, headers=server.headers)
         )

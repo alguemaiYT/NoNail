@@ -7,10 +7,10 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-import websockets
-from websockets.asyncio.server import ServerConnection
+if TYPE_CHECKING:
+    from websockets.asyncio.server import ServerConnection
 
 from .protocol import MsgType, ZombieMessage, make_error, make_ping
 
@@ -146,6 +146,8 @@ class ZombieMaster:
     # -- WebSocket handler ----------------------------------------------------
 
     async def _ws_handler(self, ws: ServerConnection) -> None:
+        import websockets
+
         remote = ws.remote_address
         self._audit(f"Connection from {remote}")
         slave_id: str | None = None
@@ -250,6 +252,8 @@ class ZombieMaster:
 
     async def run(self) -> None:
         """Start the master: WebSocket server + bots + ping loop."""
+        import websockets
+
         self._audit(f"Master starting on {self.host}:{self.port}")
 
         async with websockets.serve(self._ws_handler, self.host, self.port):

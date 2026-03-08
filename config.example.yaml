@@ -1,7 +1,7 @@
 # NoNail configuration
 # Copy to ~/.nonail/config.yaml and edit as needed.
 
-# LLM Provider — "openai", "anthropic", or "groq"
+# LLM Provider — "openai", "anthropic", "groq", or "gemini"
 # The OpenAI provider also works with OpenRouter and any OpenAI-compatible API.
 provider: openai
 
@@ -12,7 +12,7 @@ model: gpt-4o
 # api_base: https://openrouter.ai/api/v1
 
 # API key — prefer using provider-specific environment variables:
-# OPENAI_API_KEY | ANTHROPIC_API_KEY | GROQ_API_KEY
+# OPENAI_API_KEY | ANTHROPIC_API_KEY | GROQ_API_KEY | GEMINI_API_KEY
 # api_key: sk-...
 
 # Environment variable that holds the API key (choose based on provider)
@@ -30,3 +30,11 @@ max_iterations: 25
 mcp_server:
   enabled: true
   transport: stdio
+
+# Execution cache settings
+cache:
+  enabled: true
+  path: ~/.nonail/cache.db
+  mode: aggressive   # aggressive | safe | off
+  max_entries: 5000
+  ttl_seconds: 86400

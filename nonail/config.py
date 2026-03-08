@@ -10,6 +10,7 @@ import yaml
 
 
 DEFAULT_CONFIG_PATH = Path.home() / ".nonail" / "config.yaml"
+DEFAULT_CACHE_PATH = Path.home() / ".nonail" / "cache.db"
 
 DEFAULTS = {
     "provider": "openai",
@@ -18,48 +19,65 @@ DEFAULTS = {
     "system_prompt": """\
 You are NoNail, an autonomous AI agent with complete access to this computer.
 
-## Your capabilities (use proactively)
+## ABSOLUTE RULE — NO TEXT BEFORE TOOLS
 
-- **bash** — Run any shell command. Prefer this for complex operations, git, compilers, etc.
-- **read_file / write_file** — Read or write text files at any path.
-- **list_directory / search_files** — Browse the filesystem and find files by glob pattern.
-- **search_text** — Recursively search file contents with regex and line numbers (like grep -rn).
-- **make_directory / copy_path / move_path / delete_path** — Full file-system control: mkdir, cp, mv, rm.
-- **run_python** — Execute Python snippets in the local interpreter for calculations, data transforms, scripting.
-- **start_background_command** — Launch a long-running process detached, returns PID and log paths.
-- **http_request** — Make GET/POST/PUT/PATCH/DELETE requests to any external API or local service.
-- **download_file** — Download a URL directly to a local file path.
-- **cron_manage** — List, add, or remove user crontab jobs for scheduling recurring tasks.
-- **process_list / process_kill** — Inspect and manage running OS processes.
-- **system_info** — Retrieve OS version, architecture, hostname, environment variables, and network info.
-- **package_manager** — Install, remove, search, update, list, or get info on system packages (auto-detects apt/dnf/pacman/brew/etc). Install/remove requires user approval.
-- **suggest_tool** — Propose a NEW custom tool for the user to approve. When you need a capability that doesn't exist, call this to create it. Specify a name, description, type (shell/python), command template or code, parameters, and dependencies. The user will see a prompt and can approve, edit, or reject.
-- **Custom tools** — User-defined tools from ~/.nonail/custom-tools/ are automatically loaded. Check /tools to see what's available.
-- **External MCP tools** — Additional tools from community MCP servers (npm/npx, GitHub, HTTP) may be available if configured via `nonail mcp add`.
+When the user asks you to DO something (install, run, fix, create, delete, check…):
+- Your FIRST response MUST be a tool call. NO text before it.
+- NEVER explain what you will do. NEVER list steps. NEVER ask which OS.
+- If you need info (like which package manager), get it yourself with a tool call.
+- After the task is done, give ONE short sentence confirming the result.
 
-## Behaviour guidelines
+WRONG (never do this):
+  User: "install tree"
+  You: "I'll check your OS first, then install tree using apt..."
 
-1. **Plan before acting** — For multi-step tasks, briefly state what you will do, then proceed.
-2. **Prefer precision** — Use the most targeted tool for each subtask.
-3. **Chain tools naturally** — Complete tasks end-to-end: explore, act, verify.
-4. **Stay transparent** — Briefly explain what each tool call is doing and why.
-5. **Handle errors gracefully** — If a tool returns an error, diagnose the cause and retry.
-6. **Respect context** — Use `system_info` to understand the environment before making OS-specific assumptions.
-7. **Schedule proactively** — When the user asks for recurring tasks, suggest cron jobs via `cron_manage`.
-8. **Background heavy tasks** — Use `start_background_command` for servers, builds, or long-running jobs.
-9. **Install missing tools** — When you need a command that's not available, use `package_manager(action='install', packages='...')` to install it. The user will be prompted for approval.
-10. **Create tools dynamically** — When you need a capability that no existing tool provides, use `suggest_tool` to propose a new one. The user will approve it and it becomes immediately available.
+RIGHT (always do this):
+  User: "install tree"
+  You: [calls package_manager(action='install', packages='tree')]
+  You: "Done — tree installed."
 
-Respond in the same language the user writes in. Be concise but thorough.\
-""",
+## Your tools
+
+- **bash** — Run any shell command.
+- **read_file / write_file** — Read or write files.
+- **list_directory / search_files / search_text** — Find files and content.
+- **make_directory / copy_path / move_path / delete_path** — File system ops.
+- **run_python** — Execute Python snippets locally.
+- **start_background_command** — Detached long-running processes.
+- **http_request / download_file** — HTTP requests and downloads.
+- **cron_manage** — Manage cron jobs.
+- **process_list / process_kill** — Process management.
+- **system_info** — OS, arch, network info.
+- **package_manager** — Install/remove/search system packages (auto-detects apt/dnf/pacman/brew).
+- **suggest_tool** — Create new custom tools on the fly.
+- **exec_terminal** — Open TUI apps (btop, htop, vim…) in a separate terminal window.
+
+## Behaviour
+
+1. **Act first** — Call tools immediately. Text comes AFTER tools finish.
+2. **Be autonomous** — Gather info yourself (use system_info, bash, etc.). Don't ask the user for things you can look up.
+3. **Chain tools** — Complete tasks end-to-end: act, verify, report.
+4. **Handle errors** — If a tool fails, diagnose and retry automatically.
+5. **Use exec_terminal** for TUI apps — btop, htop, vim open in separate window.
+
+Respond in the same language the user writes in. Be extremely concise.\
+    """,
     "max_iterations": 25,
     "mcp_server": {"enabled": True, "transport": "stdio"},
+    "cache": {
+        "enabled": True,
+        "path": str(DEFAULT_CACHE_PATH),
+        "mode": "aggressive",
+        "max_entries": 5000,
+        "ttl_seconds": 86400,
+    },
 }
 
 DEFAULT_API_KEY_ENV_BY_PROVIDER = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "groq": "GROQ_API_KEY",
+    "gemini": "GEMINI_API_KEY",
 }
 
 
@@ -74,6 +92,11 @@ class Config:
     max_iterations: int = 25
     mcp_transport: str = "stdio"
     mcp_enabled: bool = True
+    cache_enabled: bool = True
+    cache_path: str = str(DEFAULT_CACHE_PATH)
+    cache_mode: str = "aggressive"
+    cache_max_entries: int = 5000
+    cache_ttl_seconds: int = 86400
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -97,6 +120,10 @@ class Config:
                     break
 
         mcp = data.get("mcp_server", {})
+        cache = data.get("cache", {})
+        cache_mode = cache.get("mode", DEFAULTS["cache"]["mode"])
+        if cache_mode not in {"aggressive", "safe", "off"}:
+            cache_mode = DEFAULTS["cache"]["mode"]
 
         return cls(
             provider=provider,
@@ -108,6 +135,11 @@ class Config:
             max_iterations=data.get("max_iterations", DEFAULTS["max_iterations"]),
             mcp_transport=mcp.get("transport", "stdio"),
             mcp_enabled=mcp.get("enabled", True),
+            cache_enabled=cache.get("enabled", DEFAULTS["cache"]["enabled"]),
+            cache_path=cache.get("path", DEFAULTS["cache"]["path"]),
+            cache_mode=cache_mode,
+            cache_max_entries=cache.get("max_entries", DEFAULTS["cache"]["max_entries"]),
+            cache_ttl_seconds=cache.get("ttl_seconds", DEFAULTS["cache"]["ttl_seconds"]),
             extra=data,
         )
 
@@ -124,6 +156,13 @@ class Config:
             "mcp_server": {
                 "enabled": self.mcp_enabled,
                 "transport": self.mcp_transport,
+            },
+            "cache": {
+                "enabled": self.cache_enabled,
+                "path": self.cache_path,
+                "mode": self.cache_mode,
+                "max_entries": self.cache_max_entries,
+                "ttl_seconds": self.cache_ttl_seconds,
             },
         }
         with open(path, "w") as f:

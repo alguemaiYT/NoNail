@@ -6,11 +6,9 @@ import asyncio
 import sys
 
 import click
-from rich.console import Console
 
 from .config import Config, DEFAULT_CONFIG_PATH
-
-console = Console()
+from .ui import cprint, print_table
 
 
 @click.group()
@@ -40,8 +38,8 @@ def chat(config, provider, model, api_key, api_base):
         cfg.api_base = api_base
 
     if not cfg.api_key:
-        console.print(
-            "[red]No API key found.[/red] Set your provider API key env var or pass --api-key."
+        cprint(
+            "No API key found. Set your provider API key env var or pass --api-key."
         )
         sys.exit(1)
 
@@ -58,13 +56,13 @@ def run(config, message):
 
     cfg = Config.load(config)
     if not cfg.api_key:
-        console.print("[red]No API key. Set your provider API key env var or use config.yaml.[/red]")
+        cprint("No API key. Set your provider API key env var or use config.yaml.")
         sys.exit(1)
 
     agent = Agent(cfg)
     prompt = " ".join(message)
     result = asyncio.run(agent.step(prompt))
-    console.print(result)
+    cprint(result)
 
 
 @cli.command()
@@ -81,16 +79,14 @@ def serve():
 @cli.command()
 def tools():
     """List all available tools exposed to the LLM."""
-    from rich.table import Table
-
     from .tools import ALL_TOOLS
 
-    table = Table(title="NoNail Tools")
-    table.add_column("Name", style="cyan")
-    table.add_column("Description", style="white")
-    for t in ALL_TOOLS:
-        table.add_row(t.name, t.description)
-    console.print(table)
+    print_table(
+        "NoNail Tools",
+        ["Name", "Description"],
+        [[t.name, t.description] for t in ALL_TOOLS],
+        col_widths=[28, 55],
+    )
 
 
 @cli.command()
@@ -120,8 +116,8 @@ def init(provider, model, api_key):
         api_key_env=selected_env,
     )
     cfg.save()
-    console.print(f"[green]Config saved to {DEFAULT_CONFIG_PATH}[/green]")
-    console.print(f"Set your API key: [cyan]export {selected_env}=...[/cyan]")
+    cprint(f"Config saved to {DEFAULT_CONFIG_PATH}")
+    cprint(f"Set your API key: export {selected_env}=...")
 
 
 @cli.command()
@@ -140,18 +136,18 @@ def doctor():
     for label, val in checks.items():
         if isinstance(val, bool):
             icon = "✅" if val else "❌"
-            console.print(f"  {icon} {label}")
+            cprint(f"  {icon} {label}")
         else:
-            console.print(f"  ℹ️  {label}: [cyan]{val}[/cyan]")
+            cprint(f"  ℹ️  {label}: {val}")
 
     servers = load_servers()
     if servers:
-        console.print(f"  ℹ️  External MCP servers: [cyan]{len(servers)}[/cyan] configured")
+        cprint(f"  ℹ️  External MCP servers: {len(servers)} configured")
         for name, s in servers.items():
             status = "✅" if s.enabled else "⏸"
-            console.print(f"     {status} {name} ({s.type})")
+            cprint(f"     {status} {name} ({s.type})")
     else:
-        console.print("  ℹ️  External MCP servers: [dim]none (see 'nonail mcp add')[/dim]")
+        cprint("  ℹ️  External MCP servers: none (see 'nonail mcp add')")
 
 
 # ---------------------------------------------------------------------------
@@ -168,30 +164,25 @@ def mcp():
 @mcp.command("list")
 def mcp_list():
     """List all configured external MCP servers and their status."""
-
-    from rich.table import Table
-
     from .mcp_client import load_servers
 
     servers = load_servers()
     if not servers:
-        console.print("[dim]No external MCP servers configured. Run 'nonail mcp add' to add one.[/dim]")
+        cprint("No external MCP servers configured. Run 'nonail mcp add' to add one.")
         return
 
-    table = Table(title="External MCP Servers", show_lines=True)
-    table.add_column("Name", style="cyan")
-    table.add_column("Type", style="white")
-    table.add_column("Command / URL", style="white")
-    table.add_column("Tools", style="dim")
-    table.add_column("Status", justify="center")
-
+    rows: list[list[str]] = []
     for name, s in servers.items():
         cmd = s.command + (" " + " ".join(s.args) if s.args else "") if s.type == "stdio" else s.url
         tools_str = ", ".join(s.tools) if s.tools != ["*"] else "*"
         status = "✅ enabled" if s.enabled else "⏸ disabled"
-        table.add_row(name, s.type, cmd, tools_str, status)
+        rows.append([name, s.type, cmd, tools_str, status])
 
-    console.print(table)
+    print_table(
+        "External MCP Servers",
+        ["Name", "Type", "Command / URL", "Tools", "Status"],
+        rows,
+    )
 
 
 @mcp.command("add")
@@ -224,7 +215,7 @@ def mcp_add(name, transport, command, args_str, env_str, url, headers_str, tools
 
     servers = load_servers()
     if name in servers:
-        console.print(f"[yellow]Server '{name}' already exists. Remove it first with 'nonail mcp remove {name}'.[/yellow]")
+        cprint(f"Server '{name}' already exists. Remove it first with 'nonail mcp remove {name}'.")
         sys.exit(1)
 
     env: dict = {}
@@ -232,7 +223,7 @@ def mcp_add(name, transport, command, args_str, env_str, url, headers_str, tools
         try:
             env = _json.loads(env_str)
         except Exception:
-            console.print("[red]--env must be valid JSON, e.g. '{\"KEY\":\"val\"}'[/red]")
+            cprint("--env must be valid JSON, e.g. '{\"KEY\":\"val\"}'")
             sys.exit(1)
 
     headers: dict = {}
@@ -240,7 +231,7 @@ def mcp_add(name, transport, command, args_str, env_str, url, headers_str, tools
         try:
             headers = _json.loads(headers_str)
         except Exception:
-            console.print("[red]--headers must be valid JSON[/red]")
+            cprint("--headers must be valid JSON")
             sys.exit(1)
 
     args_list = args_str.split() if args_str else []
@@ -262,10 +253,10 @@ def mcp_add(name, transport, command, args_str, env_str, url, headers_str, tools
 
     if transport == "stdio":
         cmd_display = command + (" " + " ".join(args_list) if args_list else "")
-        console.print(f"[green]✅ Added '{name}' (stdio): {cmd_display}[/green]")
+        cprint(f"✅ Added '{name}' (stdio): {cmd_display}")
     else:
-        console.print(f"[green]✅ Added '{name}' ({transport}): {url}[/green]")
-    console.print(f"[dim]Run 'nonail mcp test {name}' to verify the connection.[/dim]")
+        cprint(f"✅ Added '{name}' ({transport}): {url}")
+    cprint(f"Run 'nonail mcp test {name}' to verify the connection.")
 
 
 @mcp.command("remove")
@@ -276,11 +267,11 @@ def mcp_remove(name):
 
     servers = load_servers()
     if name not in servers:
-        console.print(f"[red]Server '{name}' not found.[/red]")
+        cprint(f"Server '{name}' not found.")
         sys.exit(1)
     del servers[name]
     save_servers(servers)
-    console.print(f"[green]Removed '{name}'.[/green]")
+    cprint(f"Removed '{name}'.")
 
 
 @mcp.command("enable")
@@ -291,11 +282,11 @@ def mcp_enable(name):
 
     servers = load_servers()
     if name not in servers:
-        console.print(f"[red]Server '{name}' not found.[/red]")
+        cprint(f"Server '{name}' not found.")
         sys.exit(1)
     servers[name].enabled = True
     save_servers(servers)
-    console.print(f"[green]Enabled '{name}'.[/green]")
+    cprint(f"Enabled '{name}'.")
 
 
 @mcp.command("disable")
@@ -306,11 +297,11 @@ def mcp_disable(name):
 
     servers = load_servers()
     if name not in servers:
-        console.print(f"[red]Server '{name}' not found.[/red]")
+        cprint(f"Server '{name}' not found.")
         sys.exit(1)
     servers[name].enabled = False
     save_servers(servers)
-    console.print(f"[yellow]Disabled '{name}'.[/yellow]")
+    cprint(f"Disabled '{name}'.")
 
 
 @mcp.command("test")
@@ -319,13 +310,11 @@ def mcp_test(name):
     """Test connection to an external MCP server and list its tools."""
     import asyncio
 
-    from rich.table import Table
-
     from .mcp_client import MCPClientManager, load_servers
 
     servers = load_servers()
     if name not in servers:
-        console.print(f"[red]Server '{name}' not found.[/red]")
+        cprint(f"Server '{name}' not found.")
         sys.exit(1)
 
     server = servers[name]
@@ -338,24 +327,23 @@ def mcp_test(name):
         finally:
             await manager.close()
 
-    console.print(f"[dim]Connecting to '{name}'...[/dim]")
+    cprint(f"Connecting to '{name}'...")
     try:
         tools = asyncio.run(_test())
     except Exception as exc:
-        console.print(f"[red]❌ Connection failed: {exc}[/red]")
+        cprint(f"❌ Connection failed: {exc}")
         sys.exit(1)
 
     if not tools:
-        console.print("[yellow]Connected but no tools were discovered.[/yellow]")
+        cprint("Connected but no tools were discovered.")
         return
 
-    table = Table(title=f"Tools from '{name}'")
-    table.add_column("Tool name", style="cyan")
-    table.add_column("Description", style="white")
-    for t in tools:
-        table.add_row(t.name, t.description)
-    console.print(table)
-    console.print(f"[green]✅ {len(tools)} tool(s) available.[/green]")
+    print_table(
+        f"Tools from '{name}'",
+        ["Tool name", "Description"],
+        [[t.name, t.description] for t in tools],
+    )
+    cprint(f"✅ {len(tools)} tool(s) available.")
 
 
 if __name__ == "__main__":
@@ -374,11 +362,11 @@ def _check_zombie_enabled(experimental: bool) -> None:
         import nonail.zombie as zmod
         zmod.ZOMBIE_ENABLED = True
         return
-    console.print(
-        "[bold yellow]⚠  Zombie Mode is an experimental (BETA) feature.[/bold yellow]\n"
+    cprint(
+        "⚠  Zombie Mode is an experimental (BETA) feature.\n"
         "   Enable it with one of:\n"
-        "   • [cyan]export NONAIL_ZOMBIE=1[/cyan]\n"
-        "   • [cyan]nonail zombie --experimental ...[/cyan]\n"
+        "   • export NONAIL_ZOMBIE=1\n"
+        "   • nonail zombie --experimental ...\n"
     )
     sys.exit(1)
 
@@ -433,14 +421,14 @@ def zombie_master_start(host: str, port: int, password: str, config: str | None)
     try:
         asyncio.run(master.run())
     except KeyboardInterrupt:
-        console.print("\n[dim]Master stopped.[/dim]")
+        cprint("\nMaster stopped.")
 
 
 @zombie_master.command("status")
 def zombie_master_status() -> None:
     """Show master service status."""
     from .zombie.service.installer import service_status
-    console.print(service_status("master"))
+    cprint(service_status("master"))
 
 
 # -- zombie slave ------------------------------------------------------------
@@ -470,7 +458,7 @@ def zombie_slave_start(host: str, port: int, password: str, slave_id: str) -> No
     try:
         asyncio.run(slave.run())
     except KeyboardInterrupt:
-        console.print("\n[dim]Slave stopped.[/dim]")
+        cprint("\nSlave stopped.")
 
 
 # -- zombie slave service ----------------------------------------------------
@@ -492,9 +480,9 @@ def zombie_service_install(host: str, port: int, password: str) -> None:
 
     extra_args = f"--host {host} --port {port}"
     result = install_service("slave", extra_args, env_vars={"NONAIL_ZOMBIE": "1"})
-    console.print(result)
-    console.print(
-        "[dim]Note: password must be set via config file for service mode.[/dim]"
+    cprint(result)
+    cprint(
+        "Note: password must be set via config file for service mode."
     )
 
 
@@ -504,7 +492,7 @@ def zombie_service_uninstall() -> None:
     from .zombie.service.installer import uninstall_service
 
     result = uninstall_service("slave")
-    console.print(result)
+    cprint(result)
 
 
 @zombie_slave_service.command("status")
@@ -512,7 +500,7 @@ def zombie_service_status() -> None:
     """Show slave service status."""
     from .zombie.service.installer import service_status
 
-    console.print(service_status("slave"))
+    cprint(service_status("slave"))
 
 
 # -- zombie config -----------------------------------------------------------
@@ -532,7 +520,7 @@ def zombie_config() -> None:
         with open(cfg_path) as f:
             data = yaml.safe_load(f) or {}
 
-    console.print("\n[bold]🧟 Zombie Mode Configuration Wizard[/bold]\n")
+    cprint("\n🧟 Zombie Mode Configuration Wizard\n")
 
     data["port"] = click.prompt("Master port", default=data.get("port", 8765), type=int)
     data["password"] = click.prompt(
@@ -571,5 +559,5 @@ def zombie_config() -> None:
         yaml.safe_dump(data, f, default_flow_style=False)
     cfg_path.chmod(0o600)
 
-    console.print(f"\n[green]✅ Config saved to {cfg_path}[/green]")
-    console.print("[dim]Start master with: nonail zombie --experimental master start --config " + str(cfg_path) + "[/dim]\n")
+    cprint(f"\n✅ Config saved to {cfg_path}")
+    cprint("Start master with: nonail zombie --experimental master start --config " + str(cfg_path) + "\n")

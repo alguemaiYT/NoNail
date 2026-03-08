@@ -2,11 +2,87 @@
 
 from __future__ import annotations
 
+import json
+import re
+import uuid
 from typing import Any
 
 from openai import AsyncOpenAI, BadRequestError
 
 from .base import Message, Provider
+
+
+# ---------------------------------------------------------------------------
+# Regex patterns to catch text-based tool calls emitted by some models
+# (e.g. Llama, Mixtral, DeepSeek) that don't always use the structured
+# tool_calls API field.
+# ---------------------------------------------------------------------------
+
+# <function/tool_name>{"key": "value"} or <function/tool_name>({"key": "value"})
+_FUNC_TAG_RE = re.compile(
+    r"<function/(\w+)>\s*\(?\s*(\{.*?\})\s*\)?\s*>?",
+    re.DOTALL,
+)
+# ```tool_call\n{"name":"...", "arguments":{...}}\n```
+_FENCED_RE = re.compile(
+    r"```(?:tool_call|json)?\s*\n(\{.*?\})\s*\n```",
+    re.DOTALL,
+)
+
+
+def _extract_text_tool_calls(content: str) -> tuple[list[dict] | None, str]:
+    """Try to extract tool calls embedded as text in the response content.
+
+    Returns ``(tool_calls_list_or_None, cleaned_content)``.
+    """
+    calls: list[dict] = []
+
+    # Pattern 1: <function/name>{...}
+    for m in _FUNC_TAG_RE.finditer(content):
+        fn_name = m.group(1)
+        try:
+            args = json.loads(m.group(2))
+        except json.JSONDecodeError:
+            continue
+        calls.append({
+            "id": f"call_{uuid.uuid4().hex[:8]}",
+            "type": "function",
+            "function": {
+                "name": fn_name,
+                "arguments": json.dumps(args),
+            },
+        })
+
+    # Pattern 2: fenced json blocks with name+arguments
+    if not calls:
+        for m in _FENCED_RE.finditer(content):
+            try:
+                obj = json.loads(m.group(1))
+            except json.JSONDecodeError:
+                continue
+            if "name" in obj and "arguments" in obj:
+                args = obj["arguments"]
+                calls.append({
+                    "id": f"call_{uuid.uuid4().hex[:8]}",
+                    "type": "function",
+                    "function": {
+                        "name": obj["name"],
+                        "arguments": json.dumps(args) if not isinstance(args, str) else args,
+                    },
+                })
+
+    if not calls:
+        return None, content
+
+    # Remove matched spans from content so the user sees clean text
+    cleaned = content
+    for m in _FUNC_TAG_RE.finditer(content):
+        cleaned = cleaned.replace(m.group(0), "")
+    for m in _FENCED_RE.finditer(content):
+        cleaned = cleaned.replace(m.group(0), "")
+    cleaned = cleaned.strip()
+
+    return calls, cleaned
 
 
 class OpenAIProvider(Provider):
@@ -70,9 +146,19 @@ class OpenAIProvider(Provider):
                 for tc in msg.tool_calls
             ]
 
+        content = msg.content
+
+        # Fallback: some models (Llama, Mixtral, …) emit tool calls as plain
+        # text instead of using the structured tool_calls field.  Parse them.
+        if not tool_calls and content:
+            parsed, content = _extract_text_tool_calls(content)
+            if parsed:
+                tool_calls = parsed
+                content = content or None
+
         return Message(
             role="assistant",
-            content=msg.content,
+            content=content,
             tool_calls=tool_calls,
         )
 
