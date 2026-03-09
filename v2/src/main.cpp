@@ -6,6 +6,9 @@
 #include <string>
 #include <cstring>
 #include <thread>
+#include <chrono>
+#include <vector>
+#include <utility>
 
 #ifdef NONAIL_WEB
 #include "web/server.hpp"
@@ -29,6 +32,7 @@ static void print_usage() {
 #endif
 #ifdef NONAIL_ZOMBIE
               << "  zombie master         Start zombie master\n"
+              << "  zombie task           Run a scripted system analysis task on a slave\n"
               << "  zombie slave           Connect as zombie slave\n"
 #endif
 #ifdef NONAIL_DEVICES
@@ -96,6 +100,70 @@ static void cmd_zombie_master(nonail::Config& cfg) {
 static void cmd_zombie_slave(nonail::Config& cfg, const std::string& host, int port, const std::string& password) {
     nonail::ZombieSlave slave(host, port, password);
     slave.run();
+}
+
+static void cmd_zombie_task(nonail::Config& cfg, const std::string& slave_id, int wait_seconds) {
+    nonail::ZombieMaster master(cfg.zombie.password, cfg.zombie.bind_address, cfg.zombie.port);
+    std::thread server([&]() { master.run(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(wait_seconds);
+    std::string target_id;
+
+    while (std::chrono::steady_clock::now() < deadline && target_id.empty()) {
+        auto slaves = master.list_slaves();
+        if (!slaves.empty()) {
+            if (!slave_id.empty()) {
+                for (const auto& info : slaves) {
+                    if (info.id == slave_id) {
+                        target_id = info.id;
+                        break;
+                    }
+                }
+            } else {
+                target_id = slaves.front().id;
+            }
+        }
+
+        if (target_id.empty()) {
+            std::cout << "Waiting for slave " << (slave_id.empty() ? "(any)" : slave_id) << " to connect...\n";
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+
+    if (target_id.empty()) {
+        std::cerr << "No slave connected after " << wait_seconds << " seconds; aborting complex task.\n";
+        master.stop();
+        if (server.joinable()) server.join();
+        return;
+    }
+
+    std::cout << "Running complex system analysis on slave '" << target_id << "'\n";
+
+    const std::vector<std::pair<std::string, std::string>> commands = {
+        {"System overview", "uname -a"},
+        {"Uptime + load", "uptime"},
+        {"CPU info snippet", "cat /proc/cpuinfo | head -n 20"},
+        {"Memory snapshot", "cat /proc/meminfo"},
+        {"Disk usage summary", "df -h"},
+        {"Block devices", "lsblk"},
+        {"Network interfaces", "ip address"},
+        {"Routing table", "ip route"},
+        {"TCP listeners", "ss -tuln"},
+        {"Hot processes", "ps -eo pid,cmd,%cpu,%mem --sort=-%cpu | head -n 10"},
+        {"Kernel tail", "dmesg | tail -n 20"},
+        {"Entropy pool", "cat /proc/sys/kernel/random/entropy_avail"}
+    };
+
+    for (const auto& [label, command] : commands) {
+        std::cout << "\n=== " << label << " ===\n";
+        std::string output = master.send_command(target_id, command);
+        std::cout << output << "\n";
+    }
+
+    std::cout << "\n✅ Complex zombie task finished\n";
+    master.stop();
+    if (server.joinable()) server.join();
 }
 #endif
 
@@ -199,7 +267,7 @@ int main(int argc, char* argv[]) {
 #ifdef NONAIL_ZOMBIE
     } else if (cmd == "zombie") {
         if (argc < 3) {
-            std::cerr << "Usage: nonail zombie <master|slave> [options]\n";
+            std::cerr << "Usage: nonail zombie <master|slave|task> [options]\n";
             return 1;
         }
         std::string sub = argv[2];
@@ -215,6 +283,22 @@ int main(int argc, char* argv[]) {
                 if (std::string(argv[i]) == "--password") password = argv[i + 1];
             }
             cmd_zombie_slave(cfg, host, port, password);
+        } else if (sub == "task") {
+            std::string slave_id;
+            int wait_seconds = 60;
+            for (int i = 3; i < argc; ++i) {
+                std::string arg = argv[i];
+                if (arg == "--slave-id" && i + 1 < argc) {
+                    slave_id = argv[++i];
+                } else if (arg == "--wait" && i + 1 < argc) {
+                    wait_seconds = std::stoi(argv[++i]);
+                }
+            }
+            cmd_zombie_task(cfg, slave_id, wait_seconds);
+        } else {
+            std::cerr << "Unknown zombie subcommand: " << sub << "\n";
+            print_usage();
+            return 1;
         }
 #endif
 #ifdef NONAIL_DEVICES

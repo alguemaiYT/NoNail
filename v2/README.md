@@ -68,9 +68,31 @@ nonail zombie master --port 8765 --password secret
 # Zombie slave
 nonail zombie slave --host 192.168.1.1 --port 8765 --password secret
 
+# Complex system task
+nonail zombie task [--slave-id ID] [--wait SECONDS]
+
 # Scan devices
 nonail devices scan
 ```
+
+## Complex zombie slave task
+
+The `nonail zombie task` command temporarily spawns a master on the configured zombie port, waits for a slave (or the slave specified with `--slave-id`), and runs a scripted system analysis job. It sequentially executes the following commands on the slave and prints the aggregated output:
+
+1. `uname -a` — kernel and build information
+2. `uptime` — system uptime and load averages
+3. `cat /proc/cpuinfo | head -n 20` — abbreviated CPU description
+4. `cat /proc/meminfo` — current memory figures
+5. `df -h` — human-readable disk usage
+6. `lsblk` — block device topology
+7. `ip address` — interface addresses
+8. `ip route` — routing table
+9. `ss -tuln` — listening sockets
+10. `ps -eo pid,cmd,%cpu,%mem --sort=-%cpu | head -n 10` — hottest processes
+11. `dmesg | tail -n 20` — recent kernel log lines
+12. `cat /proc/sys/kernel/random/entropy_avail` — entropy pool depth
+
+The task gives the AI-rich slave output for verification and proves that the zombie channel can deliver complex, multi-command payloads.
 
 ## License
 MIT
